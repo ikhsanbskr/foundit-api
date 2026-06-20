@@ -326,6 +326,7 @@ class ReportController extends BaseController
 
         } catch (\Exception $e) {
             return $this->failServerError('Gagal memuat postingan saya: ' . $e->getMessage());
+        }
     }
 
     private function getUserFromToken()
