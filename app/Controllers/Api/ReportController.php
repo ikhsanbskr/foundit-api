@@ -107,13 +107,14 @@ class ReportController extends BaseController
                             mkdir($uploadPath, 0777, true);
                         }
 
-                        // Kompresi dan konversi
+                        // Kompresi dan konversi (Resolusi diturunkan agar lebih cepat)
                         $imageService = \Config\Services::image()
                             ->withFile($file->getTempName())
-                            ->resize(1200, 1200, true, 'height')
+                            ->resize(800, 800, true, 'height')
                             ->convert(IMAGETYPE_WEBP);
                         
-                        $imageService->save($uploadPath . $newName);
+                        // Quality WebP diturunkan ke 65 (default 90 sangat berat)
+                        $imageService->save($uploadPath . $newName, 65);
 
                         // Simpan ke DB
                         $this->imageModel->insert([
@@ -159,7 +160,7 @@ class ReportController extends BaseController
                 $images = $this->imageModel->where('item_id', $report['id'])->findAll();
                 $imageUrls = [];
                 foreach ($images as $img) {
-                    $imageUrls[] = base_url($img['image_path']);
+                    $imageUrls[] = '/' . ltrim($img['image_path'], '/');
                 }
 
                 // Batasi nama maksimal 2 kata

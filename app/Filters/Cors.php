@@ -19,9 +19,10 @@ class Cors implements FilterInterface
         header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
 
         // Menangani pre-flight request (HTTP OPTIONS method) yang otomatis dikirim oleh browser/Axios
-        $method = $_SERVER['REQUEST_METHOD'];
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
         if ($method === "OPTIONS") {
-            die();
+            header("HTTP/1.1 200 OK");
+            exit();
         }
     }
 
