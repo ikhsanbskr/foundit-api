@@ -11,12 +11,42 @@ class UserSeeder extends Seeder
         $data = [
             // Akun Utama Kamu (Mahasiswa)
             [
-                'username'     => '241011403217', // NIM Riil Kamu
+                'username'     => '241011403217', // NIM Riil 
                 'password'     => password_hash('Testing123!', PASSWORD_BCRYPT),
-                'fullname'     => 'Muhammad Ikhsan Trianda Baskara', // Data Profil Kamu
+                'fullname'     => 'Ikhsan Baskara', // Data Profil 
                 'email'        => 'ikhsan.baskara@mahasiswa.unpam.ac.id',
                 'role'         => 'mahasiswa',
                 'phone_number' => '087840233052',
+                'api_token'    => null,
+                'status'       => 'active',
+            ],
+            [
+                'username'     => '241011402833',
+                'password'     => password_hash('Testing123!', PASSWORD_BCRYPT),
+                'fullname'     => 'Rizky Saputra', // Data Profil 
+                'email'        => 'rizkysaputra@mahasiswa.unpam.ac.id',
+                'role'         => 'mahasiswa',
+                'phone_number' => '085156482125',
+                'api_token'    => null,
+                'status'       => 'active',
+            ],
+            [
+                'username'     => '241011401077',
+                'password'     => password_hash('Testing123!', PASSWORD_BCRYPT),
+                'fullname'     => 'Dzidan Prasetyo', // Data Profil 
+                'email'        => 'dzidanprasetyo@mahasiswa.unpam.ac.id',
+                'role'         => 'mahasiswa',
+                'phone_number' => '0895334092792',
+                'api_token'    => null,
+                'status'       => 'active',
+            ],
+            [
+                'username'     => '241011401102',
+                'password'     => password_hash('Testing123!', PASSWORD_BCRYPT),
+                'fullname'     => 'Kaisar Rizky', // Data Profil 
+                'email'        => 'kaisarrizky@mahasiswa.unpam.ac.id',
+                'role'         => 'mahasiswa',
+                'phone_number' => '085770908836',
                 'api_token'    => null,
                 'status'       => 'active',
             ],
