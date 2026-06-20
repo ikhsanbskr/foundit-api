@@ -50,6 +50,16 @@ class UserSeeder extends Seeder
                 'api_token'    => null,
                 'status'       => 'active',
             ],
+            [
+                'username'     => '241011200610',
+                'password'     => password_hash('Testing123!', PASSWORD_BCRYPT),
+                'fullname'     => 'Fera Aprilia', // Data Profil 
+                'email'        => 'feraaprilia@mahasiswa.unpam.ac.id',
+                'role'         => 'mahasiswa',
+                'phone_number' => '087741401874',
+                'api_token'    => null,
+                'status'       => 'active',
+            ],
             // 9 Data Mahasiswa Mock Lainnya dengan Pola NIM Serupa
             [
                 'username'     => '241011403218',
