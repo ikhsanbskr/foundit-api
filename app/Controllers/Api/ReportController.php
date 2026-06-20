@@ -326,6 +326,154 @@ class ReportController extends BaseController
 
         } catch (\Exception $e) {
             return $this->failServerError('Gagal memuat postingan saya: ' . $e->getMessage());
+    }
+
+    private function getUserFromToken()
+    {
+        $header = $this->request->getHeaderLine('Authorization');
+        if (preg_match('/Bearer\s(\S+)/', $header, $matches)) {
+            $userModel = new \App\Models\UserModel();
+            return $userModel->where('api_token', $matches[1])->first();
+        }
+        return null;
+    }
+
+    public function getReport($id)
+    {
+        try {
+            $db = \Config\Database::connect();
+            $report = $db->table('g_item_discoveries')->where('id', $id)->get()->getRowArray();
+            if (!$report) return $this->failNotFound('Laporan tidak ditemukan');
+
+            $images = $this->imageModel->where('item_id', $id)->findAll();
+            $report['images'] = [];
+            foreach ($images as $img) {
+                $report['images'][] = [
+                    'id' => $img['id'],
+                    'url' => '/' . ltrim($img['image_path'], '/')
+                ];
+            }
+
+            return $this->respond(['status' => 200, 'data' => $report]);
+        } catch (\Exception $e) {
+            return $this->failServerError($e->getMessage());
+        }
+    }
+
+    public function deletePost($id)
+    {
+        try {
+            $user = $this->getUserFromToken();
+            if (!$user) return $this->failUnauthorized('Akses ditolak.');
+
+            $db = \Config\Database::connect();
+            $report = $db->table('g_item_discoveries')->where('id', $id)->get()->getRowArray();
+
+            if (!$report) return $this->failNotFound('Laporan tidak ditemukan');
+            if ($report['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+                return $this->failForbidden('Anda tidak berhak menghapus laporan ini.');
+            }
+            if (in_array(strtoupper($report['status']), ['SECURED', 'RESOLVED'])) {
+                return $this->failForbidden('Laporan yang sudah SECURED atau RESOLVED tidak dapat dihapus.');
+            }
+
+            // Hapus gambar fisik
+            $images = $this->imageModel->where('item_id', $id)->findAll();
+            foreach ($images as $img) {
+                $path = FCPATH . ltrim($img['image_path'], '/');
+                if (file_exists($path)) @unlink($path);
+            }
+
+            $db->table('g_item_discoveries')->where('id', $id)->delete();
+            return $this->respondDeleted(['status' => 200, 'message' => 'Laporan berhasil dihapus']);
+        } catch (\Exception $e) {
+            return $this->failServerError($e->getMessage());
+        }
+    }
+
+    public function updateReport($id)
+    {
+        try {
+            $user = $this->getUserFromToken();
+            if (!$user) return $this->failUnauthorized('Akses ditolak.');
+
+            $db = \Config\Database::connect();
+            $report = $db->table('g_item_discoveries')->where('id', $id)->get()->getRowArray();
+
+            if (!$report) return $this->failNotFound('Laporan tidak ditemukan');
+            if ($report['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+                return $this->failForbidden('Anda tidak berhak mengedit laporan ini.');
+            }
+            if (in_array(strtoupper($report['status']), ['SECURED', 'RESOLVED'])) {
+                return $this->failForbidden('Laporan yang sudah SECURED atau RESOLVED tidak dapat diedit.');
+            }
+
+            // Update text fields
+            $updateData = [
+                'category_id' => $this->request->getPost('category_id'),
+                'category_detail_id' => $this->request->getPost('category_detail_id'),
+                'item_name' => $this->request->getPost('item_name'),
+                'location_found' => $this->request->getPost('location_found'),
+                'description' => $this->request->getPost('description'),
+                'verification_description' => $this->request->getPost('verification_description'),
+                'bounty_amount' => $this->request->getPost('bounty_amount'),
+                'bank_id' => $this->request->getPost('bank_id'),
+                'account_number' => $this->request->getPost('account_number'),
+            ];
+
+            // Remove empty fields
+            $updateData = array_filter($updateData, function($val) { return $val !== null && $val !== ''; });
+            if (!empty($updateData)) {
+                $db->table('g_item_discoveries')->where('id', $id)->update($updateData);
+            }
+
+            // Handle kept images
+            $keptImages = $this->request->getPost('kept_images'); // Array of image IDs to keep
+            if (!is_array($keptImages)) $keptImages = [];
+
+            // Delete images not in kept_images
+            $existingImages = $this->imageModel->where('item_id', $id)->findAll();
+            foreach ($existingImages as $img) {
+                if (!in_array($img['id'], $keptImages)) {
+                    $path = FCPATH . ltrim($img['image_path'], '/');
+                    if (file_exists($path)) @unlink($path);
+                    $this->imageModel->delete($img['id']);
+                }
+            }
+
+            // Handle new uploaded images
+            $files = $this->request->getFiles();
+            if (isset($files['images'])) {
+                $images = $files['images'];
+                if (!is_array($images)) $images = [$images];
+
+                $isPrimary = empty($keptImages); // If no kept images, first new one is primary
+
+                foreach ($images as $file) {
+                    if ($file->isValid() && !$file->hasMoved()) {
+                        $newName = $file->getRandomName() . '.webp';
+                        $uploadPath = FCPATH . 'uploads/items/';
+                        if (!is_dir($uploadPath)) mkdir($uploadPath, 0777, true);
+
+                        $imageService = \Config\Services::image()
+                            ->withFile($file->getTempName())
+                            ->resize(800, 800, true, 'height')
+                            ->convert(IMAGETYPE_WEBP);
+                        $imageService->save($uploadPath . $newName, 65);
+
+                        $this->imageModel->insert([
+                            'item_id' => $id,
+                            'image_path' => 'uploads/items/' . $newName,
+                            'is_primary' => $isPrimary
+                        ]);
+                        $isPrimary = false;
+                    }
+                }
+            }
+
+            return $this->respond(['status' => 200, 'message' => 'Laporan berhasil diperbarui']);
+        } catch (\Exception $e) {
+            return $this->failServerError($e->getMessage());
         }
     }
 }
