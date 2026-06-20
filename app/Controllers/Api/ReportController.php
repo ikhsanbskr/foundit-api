@@ -58,11 +58,17 @@ class ReportController extends BaseController
             $bountyAmount = $this->request->getPost('bounty_amount') ?: 0;
             $bankId = $this->request->getPost('bank_id') ?: null;
             $accountNumber = $this->request->getPost('account_number') ?: null;
+            $eventTime = $this->request->getPost('event_time') ?: null;
+            $reportType = $this->request->getPost('report_type') ?: 'FOUND';
+            $status = $this->request->getPost('status') ?: 'REPORTED';
 
             // Validasi sederhana
             if (!$categoryId || !$categoryDetailId || !$locationFound || !$description || !$itemName) {
                 return $this->failValidationErrors('Data wajib (Kategori, Nama, Lokasi, Deskripsi) belum lengkap.');
             }
+
+            // Generate ticket number
+            $ticketNumber = 'TKT-' . strtoupper(bin2hex(random_bytes(4)));
 
             // 1. Simpan ke tabel penemuan
             $discoveryId = $this->discoveryModel->insert([
@@ -70,14 +76,16 @@ class ReportController extends BaseController
                 'category_id' => $categoryId,
                 'category_detail_id' => $categoryDetailId,
                 'bank_id' => $bankId,
-                'report_type' => 'FOUND',
-                'status' => 'REPORTED',
+                'report_type' => $reportType,
+                'status' => $status,
                 'item_name' => $itemName,
                 'location_found' => $locationFound,
                 'description' => $description,
                 'verification_description' => $verificationDesc,
                 'bounty_amount' => $bountyAmount,
-                'account_number' => $accountNumber
+                'account_number' => $accountNumber,
+                'event_time' => $eventTime,
+                'ticket_number' => $ticketNumber
             ]);
 
             if (!$discoveryId) {
@@ -128,10 +136,22 @@ class ReportController extends BaseController
                 }
             }
 
+            // 3. JALANKAN MATCHING ENGINE
+            $matchCount = 0;
+            if ($reportType === 'LOST') {
+                $db = \Config\Database::connect();
+                $newLostItem = $db->table('g_item_discoveries')->where('id', $discoveryId)->get()->getRowArray();
+                $matchCount = $this->executeThreePhaseMatching($newLostItem);
+            }
+
             return $this->respondCreated([
                 'status' => 201,
-                'message' => 'Laporan temuan berhasil dikirim dan disebarkan!',
-                'data' => ['id' => $discoveryId]
+                'message' => 'Laporan berhasil dikirim dan disebarkan!',
+                'data' => [
+                    'id' => $discoveryId,
+                    'ticket_number' => $ticketNumber,
+                    'matches_found' => $matchCount
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -144,7 +164,7 @@ class ReportController extends BaseController
         try {
             $db = \Config\Database::connect();
             $builder = $db->table('g_item_discoveries d');
-            $builder->select('d.id, d.item_name, d.description, d.status, d.created_at, d.location_found, u.username, u.fullname, c.category_name, d.user_id, d.report_type');
+            $builder->select('d.id, d.ticket_number, d.item_name, d.description, d.status, d.created_at, d.location_found, u.username, u.fullname, c.category_name, d.user_id, d.report_type');
             $builder->join('s_users u', 'u.id = d.user_id', 'left');
             $builder->join('gm_category c', 'c.id = d.category_id', 'left');
             $builder->where('d.report_type', 'FOUND');
@@ -199,6 +219,7 @@ class ReportController extends BaseController
 
                 $formattedReports[] = [
                     'id' => $report['id'],
+                    'ticket_number' => $report['ticket_number'] ?? null,
                     'headerDark' => $report['user_id'] % 2 == 0, // Random styling
                     'avatar' => '/profile/user_image.png', // Menggunakan gambar lokal
                     'initials' => strtoupper(substr($report['username'] ?? 'U', 0, 2)),
@@ -250,7 +271,7 @@ class ReportController extends BaseController
 
             $db = \Config\Database::connect();
             $builder = $db->table('g_item_discoveries d');
-            $builder->select('d.id, d.item_name, d.description, d.status, d.created_at, d.location_found, u.username, u.fullname, c.category_name, d.user_id, d.report_type');
+            $builder->select('d.id, d.ticket_number, d.item_name, d.description, d.status, d.created_at, d.location_found, u.username, u.fullname, c.category_name, d.user_id, d.report_type');
             $builder->join('s_users u', 'u.id = d.user_id', 'left');
             $builder->join('gm_category c', 'c.id = d.category_id', 'left');
             $builder->where('d.user_id', $user['id']);
@@ -302,6 +323,7 @@ class ReportController extends BaseController
 
                 $formattedReports[] = [
                     'id' => $report['id'],
+                    'ticket_number' => $report['ticket_number'] ?? null,
                     'type' => $report['report_type'],
                     'headerDark' => $report['user_id'] % 2 == 0,
                     'avatar' => '/profile/user_image.png',
@@ -420,6 +442,7 @@ class ReportController extends BaseController
                 'bounty_amount' => $this->request->getPost('bounty_amount'),
                 'bank_id' => $this->request->getPost('bank_id'),
                 'account_number' => $this->request->getPost('account_number'),
+                'event_time' => $this->request->getPost('event_time'),
             ];
 
             // Remove empty fields
@@ -476,5 +499,139 @@ class ReportController extends BaseController
         } catch (\Exception $e) {
             return $this->failServerError($e->getMessage());
         }
+    }
+
+    private function executeThreePhaseMatching($lostItem)
+    {
+        $db = \Config\Database::connect();
+        
+        // LAPIS 1: FILTER KASAR DI DATABASE (Ambil FOUND + Gambar Primary-nya)
+        $kandidatFound = $db->table('g_item_discoveries d')
+            ->select('d.*, i.image_path as found_primary_image')
+            ->join('g_item_images i', 'i.item_id = d.id AND i.is_primary = 1')
+            ->where('d.report_type', 'FOUND')
+            ->whereIn('d.status', ['REPORTED', 'SECURED'])
+            ->where('d.category_id', $lostItem['category_id'])
+            ->where('d.category_detail_id', $lostItem['category_detail_id'])
+            ->where('d.event_time >=', $lostItem['event_time']) 
+            ->get()->getResultArray();
+
+        if (empty($kandidatFound)) {
+            return 0;
+        }
+
+        // Ambil gambar primary milik laporan LOST
+        $lostPrimaryImage = $db->table('g_item_images')
+            ->where('item_id', $lostItem['id'])
+            ->where('is_primary', 1)
+            ->get()->getRowArray();
+
+        $lostImagePath = $lostPrimaryImage ? $lostPrimaryImage['image_path'] : null;
+
+        $lostNameTokens = $this->parseToCleanKeywords($lostItem['item_name']);
+        $lostDescTokens = $this->parseToCleanKeywords($lostItem['description']);
+        $lostLocation   = strtolower(trim($lostItem['location_found']));
+
+        $shortlistedCandidates = [];
+
+        // LAPIS 2: PERHITUNGAN BOBOT TEKS DI MEMORI PHP
+        foreach ($kandidatFound as $foundItem) {
+            $dbScore = 0;
+            $foundLocation = strtolower(trim($foundItem['location_found']));
+            if ($lostLocation === $foundLocation) {
+                $dbScore += 20;
+            } elseif (!empty($lostLocation) && str_contains($foundLocation, $lostLocation)) {
+                $dbScore += 10; 
+            }
+
+            $foundNameClean = strtolower($foundItem['item_name']);
+            $nameMatches = 0;
+            foreach ($lostNameTokens as $token) {
+                if (preg_match("/\b" . preg_quote($token, '/') . "\b/i", $foundNameClean)) {
+                    $nameMatches += 5; 
+                }
+            }
+            $dbScore += min($nameMatches, 15); 
+
+            $foundDescClean = strtolower($foundItem['description']);
+            $descMatches = 0;
+            foreach ($lostDescTokens as $token) {
+                if (preg_match("/\b" . preg_quote($token, '/') . "\b/i", $foundDescClean)) {
+                    $descMatches += 3; 
+                }
+            }
+            $dbScore += min($descMatches, 15); 
+
+            if ($dbScore >= 15) {
+                $foundItem['computed_db_score'] = $dbScore;
+                $shortlistedCandidates[] = $foundItem;
+            }
+        }
+
+        if (empty($shortlistedCandidates)) {
+            return 0;
+        }
+
+        usort($shortlistedCandidates, function($a, $b) {
+            if ($b['computed_db_score'] !== $a['computed_db_score']) {
+                return $b['computed_db_score'] <=> $a['computed_db_score'];
+            }
+            return strtotime($a['event_time']) <=> strtotime($b['event_time']); 
+        });
+
+        $bestMatch = $shortlistedCandidates[0];
+        $matchesInsertedCount = 0;
+
+        // LAPIS 3: DEEP VISUAL ANALYSIS
+        if ($lostImagePath && isset($bestMatch['found_primary_image'])) {
+            $geminiService = new \App\Libraries\GeminiService();
+            $aiResult = $geminiService->compareSingleImageWithVision(
+                $lostImagePath, 
+                $bestMatch['found_primary_image']
+            );
+            
+            $visualScore = isset($aiResult['visual_score']) ? (int)$aiResult['visual_score'] : 0;
+            $dbScore     = $bestMatch['computed_db_score'];
+            $totalScore  = $dbScore + $visualScore;
+
+            if ($totalScore >= 80) {
+                $db->table('g_matches')->insert([
+                    'lost_ticket'      => $lostItem['ticket_number'],
+                    'found_ticket'     => $bestMatch['ticket_number'],
+                    'confidence_score' => $totalScore,
+                    'ai_reason'        => ($aiResult['reason'] ?? 'Cocok') . " [Kalkulasi: Teks {$dbScore}/50 + Visual AI {$visualScore}/50]",
+                    'timestamp'        => date('Y-m-d H:i:s')
+                ]);
+
+                $db->table('g_item_discoveries')->where('id', $lostItem['id'])->update(['status' => 'SECURED']);
+                $db->table('g_item_discoveries')->where('id', $bestMatch['id'])->update(['status' => 'SECURED']);
+                $matchesInsertedCount++;
+            }
+        }
+
+        return $matchesInsertedCount;
+    }
+
+    private function parseToCleanKeywords($text)
+    {
+        if (empty($text)) return [];
+        $text = strtolower($text);
+        $text = preg_replace('/[^\w\s]/', '', $text); 
+
+        $stopwords = [
+            'saya', 'kamu', 'dia', 'mereka', 'kita', 'kami', 'anda', 'yang', 'di', 'ke', 
+            'dari', 'ada', 'tidak', 'tapi', 'namun', 'ini', 'itu', 'untuk', 'dengan', 
+            'atau', 'dan', 'adalah', 'bahwa', 'bukan', 'kalau', 'jika', 'bisa', 'dapat'
+        ];
+
+        $words = explode(' ', $text);
+        $cleanKeywords = [];
+        foreach ($words as $word) {
+            $word = trim($word);
+            if (!in_array($word, $stopwords) && strlen($word) > 2) {
+                $cleanKeywords[] = $word;
+            }
+        }
+        return array_slice(array_unique($cleanKeywords), 0, 5);
     }
 }
