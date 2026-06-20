@@ -19,5 +19,6 @@ $routes->group('api', function ($routes) {
   $routes->group('reports', function ($routes) {
     $routes->post('found', 'Api\ReportController::submitFound');
     $routes->get('found', 'Api\ReportController::getFoundReports');
+    $routes->get('my-posts', 'Api\ReportController::getMyPosts');
   });
 });

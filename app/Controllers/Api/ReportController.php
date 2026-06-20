@@ -142,13 +142,40 @@ class ReportController extends BaseController
     public function getFoundReports()
     {
         try {
-            // Kita join g_item_discoveries dengan s_users dan gm_category
             $db = \Config\Database::connect();
             $builder = $db->table('g_item_discoveries d');
-            $builder->select('d.id, d.item_name, d.description, d.status, d.created_at, d.location_found, u.username, u.fullname, c.category_name, d.user_id');
+            $builder->select('d.id, d.item_name, d.description, d.status, d.created_at, d.location_found, u.username, u.fullname, c.category_name, d.user_id, d.report_type');
             $builder->join('s_users u', 'u.id = d.user_id', 'left');
             $builder->join('gm_category c', 'c.id = d.category_id', 'left');
             $builder->where('d.report_type', 'FOUND');
+
+            // Apply Filters
+            $keyword = $this->request->getGet('keyword');
+            $category = $this->request->getGet('category');
+            $dateStart = $this->request->getGet('date_start');
+            $dateEnd = $this->request->getGet('date_end');
+            $status = $this->request->getGet('status');
+
+            if (!empty($keyword)) {
+                $builder->groupStart();
+                $builder->like('d.item_name', $keyword);
+                $builder->orLike('d.description', $keyword);
+                $builder->orLike('d.location_found', $keyword);
+                $builder->groupEnd();
+            }
+            if (!empty($category)) {
+                $builder->where('d.category_id', $category);
+            }
+            if (!empty($dateStart)) {
+                $builder->where('DATE(d.created_at) >=', $dateStart);
+            }
+            if (!empty($dateEnd)) {
+                $builder->where('DATE(d.created_at) <=', $dateEnd);
+            }
+            if (!empty($status)) {
+                $builder->where('d.status', strtoupper($status));
+            }
+
             $builder->orderBy('d.created_at', 'DESC');
             
             $reports = $builder->get()->getResultArray();
@@ -195,6 +222,110 @@ class ReportController extends BaseController
 
         } catch (\Exception $e) {
             return $this->failServerError('Gagal memuat feed: ' . $e->getMessage());
+        }
+    }
+
+    public function getMyPosts()
+    {
+        try {
+            $header = $this->request->getHeaderLine('Authorization');
+            $token = null;
+
+            if (!empty($header)) {
+                if (preg_match('/Bearer\s(\S+)/', $header, $matches)) {
+                    $token = $matches[1];
+                }
+            }
+
+            if (!$token) {
+                return $this->failUnauthorized('Akses ditolak: Token tidak ditemukan.');
+            }
+
+            $userModel = new \App\Models\UserModel();
+            $user = $userModel->where('api_token', $token)->first();
+
+            if (!$user) {
+                return $this->failUnauthorized('Akses ditolak: Token tidak valid.');
+            }
+
+            $db = \Config\Database::connect();
+            $builder = $db->table('g_item_discoveries d');
+            $builder->select('d.id, d.item_name, d.description, d.status, d.created_at, d.location_found, u.username, u.fullname, c.category_name, d.user_id, d.report_type');
+            $builder->join('s_users u', 'u.id = d.user_id', 'left');
+            $builder->join('gm_category c', 'c.id = d.category_id', 'left');
+            $builder->where('d.user_id', $user['id']);
+
+            // Apply Filters
+            $keyword = $this->request->getGet('keyword');
+            $category = $this->request->getGet('category');
+            $dateStart = $this->request->getGet('date_start');
+            $dateEnd = $this->request->getGet('date_end');
+            $status = $this->request->getGet('status');
+
+            if (!empty($keyword)) {
+                $builder->groupStart();
+                $builder->like('d.item_name', $keyword);
+                $builder->orLike('d.description', $keyword);
+                $builder->orLike('d.location_found', $keyword);
+                $builder->groupEnd();
+            }
+            if (!empty($category)) {
+                $builder->where('d.category_id', $category);
+            }
+            if (!empty($dateStart)) {
+                $builder->where('DATE(d.created_at) >=', $dateStart);
+            }
+            if (!empty($dateEnd)) {
+                $builder->where('DATE(d.created_at) <=', $dateEnd);
+            }
+            if (!empty($status)) {
+                $builder->where('d.status', strtoupper($status));
+            }
+
+            $builder->orderBy('d.created_at', 'DESC');
+            
+            $reports = $builder->get()->getResultArray();
+
+            $formattedReports = [];
+            foreach ($reports as $report) {
+                $images = $this->imageModel->where('item_id', $report['id'])->findAll();
+                $imageUrls = [];
+                foreach ($images as $img) {
+                    $imageUrls[] = '/' . ltrim($img['image_path'], '/');
+                }
+
+                $fullname = $report['fullname'] ?? 'N/A';
+                $nameWords = explode(' ', trim($fullname));
+                if (count($nameWords) > 2) {
+                    $fullname = $nameWords[0] . ' ' . $nameWords[1];
+                }
+
+                $formattedReports[] = [
+                    'id' => $report['id'],
+                    'type' => $report['report_type'],
+                    'headerDark' => $report['user_id'] % 2 == 0,
+                    'avatar' => '/profile/user_image.png',
+                    'initials' => strtoupper(substr($report['username'] ?? 'U', 0, 2)),
+                    'username' => ($report['username'] ?? 'UNKNOWN') . ' • ' . $fullname,
+                    'meta' => date('d M Y // H:i', strtotime($report['created_at'])),
+                    'location' => strtoupper($report['location_found']),
+                    'status' => strtoupper($report['status']),
+                    'tagDark' => $report['user_id'] % 2 == 1,
+                    'category' => strtoupper($report['category_name']),
+                    'title' => $report['item_name'],
+                    'description' => $report['description'],
+                    'images' => $imageUrls
+                ];
+            }
+
+            return $this->respond([
+                'status' => 200,
+                'message' => 'Success',
+                'data' => $formattedReports
+            ]);
+
+        } catch (\Exception $e) {
+            return $this->failServerError('Gagal memuat postingan saya: ' . $e->getMessage());
         }
     }
 }
