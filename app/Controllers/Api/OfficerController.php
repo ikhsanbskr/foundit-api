@@ -97,9 +97,8 @@ class OfficerController extends ResourceController
             }
 
             // Overdue items
-            $builder->resetQuery();
-            $overdueRaw = $builder->select('d.id, d.ticket_number, d.item_name, d.created_at, u.fullname, u.phone_number')
-                                  ->from('g_item_discoveries d')
+            $overdueRaw = $this->db->table('g_item_discoveries d')
+                                  ->select('d.id, d.ticket_number, d.item_name, d.created_at, u.fullname, u.phone_number')
                                   ->join('s_users u', 'u.id = d.user_id', 'left')
                                   ->where('d.report_type', 'FOUND')
                                   ->where('d.status', 'REPORTED')

@@ -66,12 +66,7 @@ class MatchingEngine
             ->join('g_item_images i', 'i.item_id = d.id AND i.is_primary = 1', 'left')
             ->where('d.report_type', 'FOUND')
             ->whereIn('d.status', ['REPORTED', 'SECURED'])
-            ->where('d.category_id', $lostItem['category_id'])
-            ->where('d.category_detail_id', $lostItem['category_detail_id']);
-            
-        if (!empty($lostItem['event_time'])) {
-            $builder->where('d.event_time >=', $lostItem['event_time']);
-        }
+            ->where('d.category_id', $lostItem['category_id']);
 
         $kandidatFound = $builder->get()->getResultArray();
 
@@ -94,12 +89,7 @@ class MatchingEngine
             ->join('g_item_images i', 'i.item_id = d.id AND i.is_primary = 1', 'left')
             ->where('d.report_type', 'LOST')
             ->where('d.status', 'REPORTED') // LOST items stay REPORTED until RESOLVED
-            ->where('d.category_id', $foundItem['category_id'])
-            ->where('d.category_detail_id', $foundItem['category_detail_id']);
-            
-        if (!empty($foundItem['event_time'])) {
-            $builder->where('d.event_time <=', $foundItem['event_time']);
-        }
+            ->where('d.category_id', $foundItem['category_id']);
 
         $kandidatLost = $builder->get()->getResultArray();
 
@@ -160,7 +150,7 @@ class MatchingEngine
             }
             $dbScore += min($descMatches, 15); 
 
-            if ($dbScore >= 15) {
+            if ($dbScore >= 0) {
                 $candidate['computed_db_score'] = $dbScore;
                 $shortlistedCandidates[] = $candidate;
             }
@@ -202,7 +192,7 @@ class MatchingEngine
             $dbScore     = $bestMatch['computed_db_score'];
             $totalScore  = min(100, $dbScore + $visualScore); // Cap at 100%
 
-            if ($totalScore >= 80) {
+            if ($totalScore >= 50) {
                 $lostTicket = $sourceType === 'LOST' ? $sourceItem['ticket_number'] : $bestMatch['ticket_number'];
                 $foundTicket = $sourceType === 'LOST' ? $bestMatch['ticket_number'] : $sourceItem['ticket_number'];
                 
