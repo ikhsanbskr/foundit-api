@@ -24,18 +24,42 @@ class GeminiService
         $imgFoundBase64 = base64_encode(file_get_contents($imgFoundFullPath));
 
         // Prompt Forensik 1-vs-1
+        // $promptText = "
+        //     Kamu adalah sistem AI Forensik Visual Lost and Found Kampus.
+        //     Tugasmu adalah membandingkan Gambar A (Foto Utama Barang Hilang) dengan Gambar B (Foto Utama Barang Temuan).
+
+        //     Analisis secara ketat dan skeptis:
+        //     1. Apakah Gambar A dan Gambar B menunjukkan satu objek yang sama dari segi merek, model, tipe, dan warna?
+        //     2. Cari kesamaan ciri unik (seperti pola lecet, stiker yang menempel, keretakan, atau modifikasi khusus). Jika jenis objek berbeda jauh, langsung beri nilai total 0.
+
+        //     Format respons WAJIB JSON steril tanpa markdown:
+        //     {
+        //         \"visual_score\": 45,
+        //         \"reason\": \"Tulis penjelasan forensik singkat dan padat di sini.\"
+        //     }
+        // ";
+
+        // Optimized prompt and lock the scoring maximum
         $promptText = "
             Kamu adalah sistem AI Forensik Visual Lost and Found Kampus.
             Tugasmu adalah membandingkan Gambar A (Foto Utama Barang Hilang) dengan Gambar B (Foto Utama Barang Temuan).
 
-            Analisis secara ketat dan skeptis:
-            1. Apakah Gambar A dan Gambar B menunjukkan satu objek yang sama dari segi merek, model, tipe, dan warna?
-            2. Cari kesamaan ciri unik (seperti pola lecet, stiker yang menempel, keretakan, atau modifikasi khusus). Jika jenis objek berbeda jauh, langsung beri nilai total 0.
+            Analisis secara ketat dan sangat skeptis:
+            1. Apakah Gambar A dan Gambar B menunjukkan objek yang sama dari segi merek, model, tipe, dan warna?
+            2. Cari kesamaan ciri unik (pola lecet, stiker, keretakan, modifikasi seperti thumb grip). Jika jenis objek berbeda jauh, langsung beri nilai total 0.
 
-            Format respons WAJIB JSON steril tanpa markdown:
+            ATURAN PENILAIAN MUTLAK (MAKSIMAL 50):
+            - Berikan skor 40 - 50 jika objek terbukti identik secara visual, model sama, warna sama, dan ditemukan ciri unik spesifik yang sama.
+            - Berikan skor 0 - 39 jika ada perbedaan model, warna, atau terbukti objek yang berbeda.
+
+            ATURAN OUTPUT DAN TOKEN OPTIMIZATION:
+            - Jawab HANYA dengan JSON steril tanpa markdown, tanpa backtick (```json), tanpa text penjelasan di luar JSON.
+            - Batasi string \"reason\" MAKSIMAL 15 KATA saja! Tulis poin intinya langsung (misal: 'Merek sama, warna putih, keduanya memiliki thumb grip cakar kucing yang identik'). Jangan menulis kalimat pembuka atau penutup yang panjang!
+
+            Format respons WAJIB seperti ini:
             {
                 \"visual_score\": 45,
-                \"reason\": \"Tulis penjelasan forensik singkat dan padat di sini.\"
+                \"reason\": \"[Tulis analisis padat maksimal 15 kata di sini]\"
             }
         ";
 

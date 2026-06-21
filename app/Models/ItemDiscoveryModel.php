@@ -15,6 +15,7 @@ class ItemDiscoveryModel extends Model
     
     // Sesuaikan dengan skema tabel g_item_discoveries
     protected $allowedFields    = [
+        'ticket_number',
         'user_id', 
         'category_id', 
         'category_detail_id', 
@@ -27,6 +28,7 @@ class ItemDiscoveryModel extends Model
         'verification_description', 
         'bounty_amount', 
         'account_number',
+        'event_time',
         'created_at',
         'updated_at'
     ];
